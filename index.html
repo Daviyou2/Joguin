@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Nossa Casa ❤️</title>
+
+  <link
+    rel="stylesheet"
+    href="style.css"
+  >
+
+</head>
+
+
+<body>
+
+
+  <!-- ==================================================
+       TELA DE ESCOLHA
+       ================================================== -->
+
+  <div
+    id="choiceScreen"
+    class="choice-screen"
+  >
+
+    <div class="choice-box">
+
+      <h1>Nossa Casa ❤️</h1>
+
+      <p>
+        Antes de nós, existiam duas histórias...
+      </p>
+
+      <p class="choice-question">
+        Por qual você quer começar?
+      </p>
+
+
+      <div class="choice-buttons">
+
+        <button id="chooseDele">
+          🏠 Começar pela casa dele
+        </button>
+
+        <button id="chooseDela">
+          🏠 Começar pela casa dela
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+  <!-- ==================================================
+       JOGO
+       ================================================== -->
+
+  <div id="game">
+
+
+    <!-- =================================================
+         HEADER
+         ================================================= -->
+
+    <header>
+
+      <div class="header-left">
+
+        <div class="game-title">
+          🏠 Nossa Casa
+        </div>
+
+        <div
+          id="subtitle"
+          class="subtitle"
+        >
+          Antes de nós...
+        </div>
+
+      </div>
+
+
+      <div class="money">
+
+        🪙
+
+        <span id="coins">
+          0
+        </span>
+
+        <span class="rate">
+
+          (+
+
+          <span id="rate">
+            0
+          </span>
+
+          /s)
+
+        </span>
+
+      </div>
+
+    </header>
+
+
+
+    <!-- =================================================
+         ÁREA DO JOGO
+         ================================================= -->
+
+    <main class="game-area">
+
+
+      <!-- ===============================================
+           CASA
+           =============================================== -->
+
+      <section class="house-area">
+
+        <div
+          id="house"
+          class="house"
+        ></div>
+
+
+        <div
+          id="message"
+          class="message hidden"
+        ></div>
+
+      </section>
+
+
+
+      <!-- ===============================================
+           BOTÕES LATERAIS
+           =============================================== -->
+
+      <div class="game-buttons">
+
+        <button
+          id="openShop"
+          class="game-button"
+        >
+
+          <span class="button-icon">
+            🪑
+          </span>
+
+          <span>
+            Móveis
+          </span>
+
+        </button>
+
+
+        <button
+          id="openCharacters"
+          class="game-button"
+        >
+
+          <span class="button-icon">
+            👨‍👩‍👧
+          </span>
+
+          <span>
+            Personagens
+          </span>
+
+        </button>
+
+      </div>
+
+
+    </main>
+
+
+
+    <!-- =================================================
+         PAINEL DA LOJA
+         ================================================= -->
+
+    <div
+      id="shopPanel"
+      class="side-panel hidden"
+    >
+
+      <div class="panel-header">
+
+        <h2>
+          🪑 Móveis
+        </h2>
+
+        <button
+          id="closeShop"
+          class="close-button"
+        >
+          ✕
+        </button>
+
+      </div>
+
+
+      <p class="hint">
+
+        Compre um móvel e depois
+        arraste-o para a casa.
+
+      </p>
+
+
+      <div id="shop"></div>
+
+    </div>
+
+
+
+    <!-- =================================================
+         PAINEL DE PERSONAGENS
+         ================================================= -->
+
+    <div
+      id="charactersPanel"
+      class="side-panel hidden"
+    >
+
+      <div class="panel-header">
+
+        <h2>
+          👨‍👩‍👧 Personagens
+        </h2>
+
+        <button
+          id="closeCharacters"
+          class="close-button"
+        >
+          ✕
+        </button>
+
+      </div>
+
+
+      <div id="characters"></div>
+
+    </div>
+
+
+
+    <!-- =================================================
+         BOTÃO PRÓXIMA CASA
+         ================================================= -->
+
+    <button
+      id="nextHouse"
+      class="next hidden"
+    >
+      Ir para a próxima casa →
+    </button>
+
+
+  </div>
+
+
+  <script src="game.js"></script>
+
+</body>
+
+</html>
