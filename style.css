@@ -240,10 +240,10 @@ header {
   flex-shrink: 0;
 
   background:
-    #6b4738;
+    #0c0400;
 
   border:
-    12px solid #855842;
+    12px solid #865e3d;
 
   box-shadow:
     0 0 0 5px #35262a,
@@ -461,6 +461,10 @@ header {
   border-radius: 3px 0 0 3px;
 }
 
+.door-interior {
+  border-radius: 4px;
+}
+
 @keyframes doorGlow {
 
   0%,
@@ -662,6 +666,132 @@ header {
   100% {
     opacity: 1;
     filter: brightness(1);
+  }
+
+}
+
+
+/* =====================================================
+   NPC (Davi / Yasmine andando pela casa)
+   ===================================================== */
+
+.npc {
+  position: absolute;
+
+  z-index: 60;
+
+  width: 25px;
+  height: 59px;
+
+  background-repeat: no-repeat;
+  background-size: 120px 256px;
+
+  transform: translate(-50%, -100%);
+  transform-origin: bottom center;
+
+  pointer-events: none;
+
+  image-rendering: pixelated;
+
+  filter:
+    drop-shadow(2px 3px 0 rgba(30,20,20,0.35));
+}
+
+.npc-idle {
+  animation:
+    idleBob 2.6s ease-in-out infinite;
+}
+
+
+/* =====================================================
+   SELO DA FAMÍLIA (filhos desbloqueados)
+   ===================================================== */
+
+.family-badge {
+  position: absolute;
+
+  top: 10px;
+  right: 10px;
+
+  z-index: 65;
+
+  padding: 5px 9px;
+
+  background: rgba(255,245,220,0.7);
+
+  border-radius: 6px;
+
+  font-size: 20px;
+
+  box-shadow: 3px 3px 0 rgba(50,30,30,0.2);
+
+  pointer-events: none;
+}
+
+
+/* =====================================================
+   JANELAS
+   ===================================================== */
+
+.window-marker {
+  position: absolute;
+
+  z-index: 93;
+
+  background:
+    linear-gradient(
+      #cff6f7,
+      #a9d6ec
+    );
+
+  border: 3px solid #f7eee9;
+
+  pointer-events: none;
+
+  box-shadow:
+    inset 0 0 0 2px rgba(255,255,255,0.5);
+
+  animation:
+    windowShine 4s ease-in-out infinite;
+}
+
+.window-bottom {
+  bottom: 0;
+  height: 9px;
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+}
+
+.window-top {
+  top: 0;
+  height: 9px;
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+}
+
+.window-left {
+  left: 0;
+  width: 9px;
+  border-left: none;
+  border-radius: 0 2px 2px 0;
+}
+
+.window-right {
+  right: 0;
+  width: 9px;
+  border-right: none;
+  border-radius: 2px 0 0 2px;
+}
+
+@keyframes windowShine {
+
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+
+  50% {
+    filter: brightness(1.15);
   }
 
 }

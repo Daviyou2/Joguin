@@ -41,6 +41,183 @@ const state = {
 
 };
 
+// =====================================================
+// SISTEMA DE SAVE
+// =====================================================
+
+const SAVE_KEY = "nossa_casa_save";
+
+
+// =====================================================
+// SALVAR JOGO
+// =====================================================
+
+function saveGame() {
+
+  try {
+
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify(state)
+    );
+
+  }
+  catch (error) {
+
+    console.error(
+      "Erro ao salvar o jogo:",
+      error
+    );
+
+  }
+
+}
+
+
+// =====================================================
+// CARREGAR JOGO
+// =====================================================
+
+function loadGame() {
+
+  try {
+
+    const saved =
+      localStorage.getItem(
+        SAVE_KEY
+      );
+
+
+    if (!saved) {
+
+      return false;
+
+    }
+
+
+    const data =
+      JSON.parse(saved);
+
+
+    state.house =
+      data.house ?? 1;
+
+    state.coins =
+      data.coins ?? 150;
+
+    state.rate =
+      data.rate ?? 0;
+
+    state.purchased =
+      data.purchased ?? [];
+
+    state.characters =
+      data.characters ?? [];
+
+    state.startChoice =
+      data.startChoice ?? null;
+
+    state.started =
+      data.started ?? false;
+
+
+    return true;
+
+  }
+  catch (error) {
+
+    console.error(
+      "Erro ao carregar o jogo:",
+      error
+    );
+
+    return false;
+
+  }
+
+}
+
+
+// =====================================================
+// VERIFICAR SE EXISTE SAVE
+// =====================================================
+
+function hasSave() {
+
+  return localStorage.getItem(
+    SAVE_KEY
+  ) !== null;
+
+}
+
+
+// =====================================================
+// NOVO JOGO
+// =====================================================
+
+function newGame() {
+
+  localStorage.removeItem(
+    SAVE_KEY
+  );
+
+
+  state.house =
+    1;
+
+  state.coins =
+    150;
+
+  state.rate =
+    0;
+
+  state.purchased =
+    [];
+
+  state.characters =
+    [];
+
+  state.startChoice =
+    null;
+
+  state.started =
+    false;
+
+
+  // =================================================
+  // MOSTRAR ESCOLHA DE ELE / ELA
+  // =================================================
+
+  const saveMenu =
+    document.getElementById(
+      "saveMenu"
+    );
+
+
+  const startChoice =
+    document.getElementById(
+      "startChoice"
+    );
+
+
+  if (saveMenu) {
+
+    saveMenu.classList.add(
+      "hidden"
+    );
+
+  }
+
+
+  if (startChoice) {
+
+    startChoice.classList.remove(
+      "hidden"
+    );
+
+  }
+
+}
 
 // =====================================================
 // MÓVEIS
@@ -70,8 +247,8 @@ const furniture = [
     icon: "assets/furniture/chair.png",
     price: 30,
     rate: 2,
-    w: 4,
-    h: 4,
+    w: 6,
+    h: 6,
     quantity: 4
   },
 
@@ -81,8 +258,8 @@ const furniture = [
     icon: "assets/furniture/table.png",
     price: 70,
     rate: 3,
-    w: 8,
-    h: 4,
+    w: 12,
+    h: 6,
     quantity: 1
   },
 
@@ -307,6 +484,1206 @@ const furniture = [
 
 
 // =====================================================
+// PERSONAGENS QUE ANDAM PELA CASA (NPCs)
+// =====================================================
+
+/*
+  Cada personagem tem um spritesheet próprio:
+  4 colunas (quadros de caminhada) x 4 linhas
+  (direções, nessa ordem: baixo, esquerda,
+  direita, cima).
+
+  O movimento é "travado" tipo jogo antigo: o
+  personagem anda um eixo por vez (primeiro X,
+  depois Y), em passinhos de poucos pixels, e só
+  troca de quadro quando realmente se move — sem
+  deslizar na diagonal e sem atravessar parede,
+  móvel ou o outro personagem. Pra trocar de
+  cômodo, ele sempre passa pelo ponto da porta que
+  liga os dois cômodos (ver *_CONNECTIONS).
+*/
+
+const NPC_SHEET_COLS = 4;
+
+const NPC_DISPLAY_W = 30;
+const NPC_DISPLAY_H = 64;
+
+const NPC_DIRECTION_ROW = {
+  down: 0,
+  left: 1,
+  right: 2,
+  up: 3
+};
+
+const NPC_STEP_PX = 3; // quanto anda a cada passinho
+const NPC_STEP_INTERVAL = 130; // ms entre passinhos (define o ritmo "travado")
+const NPC_FOOT_W = 16; // "caixinha" de colisão do personagem
+const NPC_FOOT_H = 12;
+const NPC_MIN_DIST = 18; // distância mínima entre os dois personagens
+const NPC_STUCK_LIMIT = 16; // passinhos travado até desistir e escolher outro destino
+
+// tamanho real (sem zoom) de cada casa — tem que
+// bater com as classes .house-1 / .house-2 / .house-3
+// do CSS, porque é a partir daqui que a gente calcula
+// pixels de verdade pro movimento.
+
+const HOUSE_DIMENSIONS = {
+  1: { w: 560, h: 420 },
+  2: { w: 660, h: 495 },
+  3: { w: 780, h: 585 }
+};
+
+const characterSprites = {
+
+  davi: {
+    name: "Davi",
+    src: "assets/characters/davi.png"
+  },
+
+  yasmine: {
+    name: "Yasmine",
+    src: "assets/characters/yasmine.png"
+  }
+
+};
+
+
+// lista viva dos personagens andando pela casa atual
+
+state.npcs = [];
+
+
+// =====================================================
+// LIGAÇÕES ENTRE OS CÔMODOS (onde ficam as portas
+// internas) — cada ligação é um retângulo (em
+// unidades de HOUSE_GRID) bem em cima da parede
+// compartilhada pelos dois cômodos.
+// =====================================================
+
+const HOUSE1_CONNECTIONS = [
+
+  // Quarto (0) <-> Sala + Cozinha (2)
+  { rooms: [0, 2], x: 21, y: 46, w: 18, h: 8 },
+
+  // Sala + Cozinha (2) <-> Banheiro (1)
+  { rooms: [2, 1], x: 66, y: 66, w: 8, h: 18 }
+
+];
+
+const HOUSE2_CONNECTIONS = [
+
+  // Corredor (2) <-> Sala + Cozinha (0)
+  { rooms: [2, 0], x: 36, y: 20, w: 8, h: 20 },
+
+  // Corredor (2) <-> Quarto (1)
+  { rooms: [2, 1], x: 36, y: 72, w: 8, h: 16 },
+
+  // Corredor (2) <-> Banheiro (3)
+  { rooms: [2, 3], x: 56, y: 10, w: 8, h: 15 },
+
+  // Corredor (2) <-> Área (4)
+  { rooms: [2, 4], x: 56, y: 57, w: 8, h: 20 }
+
+];
+
+const HOUSE3_CONNECTIONS = [
+
+  // Hall + Escada (0) <-> Suíte (1)
+  { rooms: [0, 1], x: 7, y: 3, w: 2, h: 6 },
+
+  // Hall + Escada (0) <-> Quarto (2)
+  { rooms: [0, 2], x: 7, y: 13.5, w: 2, h: 5 },
+
+  // Hall + Escada (0) <-> Sala + Cozinha (4)
+  { rooms: [0, 4], x: 7, y: 22, w: 2, h: 6 },
+
+  // Banheiro (3) <-> Sala + Cozinha (4)
+  { rooms: [3, 4], x: 21, y: 19, w: 6, h: 2 }
+
+];
+
+
+// =====================================================
+// "PLANTA" DA CASA ATUAL (cômodos + ligações + escala)
+// =====================================================
+
+function getHouseLayout(house) {
+
+  const HOUSE_GRID =
+    house === 3
+      ? 30
+      : 100;
+
+
+  const rooms =
+    house === 1
+      ? getHouse1Rooms()
+      : houseData[house].rooms;
+
+
+  const connections =
+    house === 1
+      ? HOUSE1_CONNECTIONS
+      : house === 2
+      ? HOUSE2_CONNECTIONS
+      : HOUSE3_CONNECTIONS;
+
+
+  return {
+
+    HOUSE_GRID,
+
+    dims: HOUSE_DIMENSIONS[house],
+
+    rooms,
+
+    connections
+
+  };
+
+}
+
+
+// =====================================================
+// CONVERSÕES PRA PIXEL (tamanho real, sem zoom)
+// =====================================================
+
+function roomRectPx(room, layout) {
+
+  return {
+
+    x: (room.x / layout.HOUSE_GRID) * layout.dims.w,
+
+    y: (room.y / layout.HOUSE_GRID) * layout.dims.h,
+
+    w: (room.w / layout.HOUSE_GRID) * layout.dims.w,
+
+    h: (room.h / layout.HOUSE_GRID) * layout.dims.h
+
+  };
+
+}
+
+
+function doorwayCenterPx(conn, layout) {
+
+  return {
+
+    x: ((conn.x + conn.w / 2) / layout.HOUSE_GRID) * layout.dims.w,
+
+    y: ((conn.y + conn.h / 2) / layout.HOUSE_GRID) * layout.dims.h
+
+  };
+
+}
+
+
+// =====================================================
+// ESCOLHER UM PONTO PRA VISITAR
+// =====================================================
+
+function pickPointInRoom(room, layout, offset) {
+
+  const rect =
+    roomRectPx(
+      room,
+      layout
+    );
+
+
+  const insetX =
+    Math.max(
+      16,
+      rect.w * 0.18
+    );
+
+
+  const insetY =
+    Math.max(
+      16,
+      rect.h * 0.18
+    );
+
+
+  const spanX =
+    Math.max(
+      1,
+      rect.w - insetX * 2
+    );
+
+
+  const spanY =
+    Math.max(
+      1,
+      rect.h - insetY * 2
+    );
+
+
+  let x =
+    rect.x +
+    insetX +
+    Math.random() * spanX;
+
+
+  let y =
+    rect.y +
+    insetY +
+    Math.random() * spanY;
+
+
+  if (
+    offset
+  ) {
+
+    x =
+      Math.min(
+        rect.x + rect.w - insetX,
+        Math.max(
+          rect.x + insetX,
+          offset.x + offset.dx
+        )
+      );
+
+
+    y =
+      Math.min(
+        rect.y + rect.h - insetY,
+        Math.max(
+          rect.y + insetY,
+          offset.y + offset.dy
+        )
+      );
+
+  }
+
+
+  return {
+    x,
+    y
+  };
+
+}
+
+
+function pickRandomTargetInHouse(layout) {
+
+  const roomIndex =
+    Math.floor(
+      Math.random() * layout.rooms.length
+    );
+
+
+  const point =
+    pickPointInRoom(
+      layout.rooms[roomIndex],
+      layout
+    );
+
+
+  return {
+    room: roomIndex,
+    x: point.x,
+    y: point.y
+  };
+
+}
+
+
+// =====================================================
+// CAMINHO ENTRE CÔMODOS (passando pelas portas)
+// =====================================================
+
+function findRoomRoute(connections, start, end) {
+
+  if (
+    start === end
+  ) {
+
+    return [start];
+
+  }
+
+
+  const adjacency =
+    {};
+
+
+  connections.forEach(
+    conn => {
+
+      const [a, b] =
+        conn.rooms;
+
+
+      (adjacency[a] = adjacency[a] || []).push(b);
+
+      (adjacency[b] = adjacency[b] || []).push(a);
+
+    }
+  );
+
+
+  const visited =
+    new Set(
+      [start]
+    );
+
+
+  const queue =
+    [
+      [start]
+    ];
+
+
+  while (
+    queue.length
+  ) {
+
+    const path =
+      queue.shift();
+
+
+    const node =
+      path[path.length - 1];
+
+
+    if (
+      node === end
+    ) {
+
+      return path;
+
+    }
+
+
+    (adjacency[node] || []).forEach(
+      neighbor => {
+
+        if (
+          !visited.has(neighbor)
+        ) {
+
+          visited.add(
+            neighbor
+          );
+
+
+          queue.push(
+            [...path, neighbor]
+          );
+
+        }
+
+      }
+    );
+
+  }
+
+
+  // não achou ligação nenhuma; fica no cômodo atual
+
+  return [start];
+
+}
+
+
+function buildNpcPath(layout, fromRoom, toRoom, toX, toY) {
+
+  const route =
+    findRoomRoute(
+      layout.connections,
+      fromRoom,
+      toRoom
+    );
+
+
+  const waypoints =
+    [];
+
+
+  for (
+    let i = 0;
+    i < route.length - 1;
+    i++
+  ) {
+
+    const a =
+      route[i];
+
+
+    const b =
+      route[i + 1];
+
+
+    const conn =
+      layout.connections.find(
+        c =>
+          (c.rooms[0] === a && c.rooms[1] === b) ||
+          (c.rooms[0] === b && c.rooms[1] === a)
+      );
+
+
+    if (
+      !conn
+    ) {
+
+      continue;
+
+    }
+
+
+    const center =
+      doorwayCenterPx(
+        conn,
+        layout
+      );
+
+
+    waypoints.push(
+      {
+        x: center.x,
+        y: center.y,
+        room: b
+      }
+    );
+
+  }
+
+
+  waypoints.push(
+    {
+      x: toX,
+      y: toY,
+      room: toRoom
+    }
+  );
+
+
+  return waypoints;
+
+}
+
+
+// =====================================================
+// OBSTÁCULOS (móveis do cômodo onde o NPC está)
+// =====================================================
+
+function getFurnitureObstacles(house, roomIndex, layout) {
+
+  const room =
+    layout.rooms[roomIndex];
+
+
+  if (
+    !room
+  ) {
+
+    return [];
+
+  }
+
+
+  const rect =
+    roomRectPx(
+      room,
+      layout
+    );
+
+
+  return state.purchased
+    .filter(
+      item =>
+        item.house === house &&
+        item.room === roomIndex
+    )
+    .map(
+      item => {
+
+        const data =
+          furniture.find(
+            f =>
+              f.id === item.id
+          );
+
+
+        if (
+          !data
+        ) {
+
+          return null;
+
+        }
+
+
+        const size =
+          getFurnitureSize(
+            item,
+            data
+          );
+
+
+        return {
+
+          x: rect.x + item.x * GRID_TILE,
+
+          y: rect.y + item.y * GRID_TILE,
+
+          w: size.w * GRID_TILE,
+
+          h: size.h * GRID_TILE
+
+        };
+
+      }
+    )
+    .filter(
+      obstacle =>
+        obstacle !== null
+    );
+
+}
+
+
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+
+  return (
+    ax < bx + bw &&
+    ax + aw > bx &&
+    ay < by + bh &&
+    ay + ah > by
+  );
+
+}
+
+
+function npcPositionBlocked(x, y, obstacles, otherNpc) {
+
+  const footX =
+    x - NPC_FOOT_W / 2;
+
+
+  const footY =
+    y - NPC_FOOT_H / 2;
+
+
+  for (
+    let i = 0;
+    i < obstacles.length;
+    i++
+  ) {
+
+    const obstacle =
+      obstacles[i];
+
+
+    if (
+      rectsOverlap(
+        footX,
+        footY,
+        NPC_FOOT_W,
+        NPC_FOOT_H,
+        obstacle.x,
+        obstacle.y,
+        obstacle.w,
+        obstacle.h
+      )
+    ) {
+
+      return true;
+
+    }
+
+  }
+
+
+  if (
+    otherNpc
+  ) {
+
+    const dx =
+      x - otherNpc.x;
+
+
+    const dy =
+      y - otherNpc.y;
+
+
+    if (
+      Math.sqrt(dx * dx + dy * dy) <
+      NPC_MIN_DIST
+    ) {
+
+      return true;
+
+    }
+
+  }
+
+
+  return false;
+
+}
+
+
+// =====================================================
+// CRIAR OS NPCS DA CASA ATUAL
+// =====================================================
+
+function setupNpcs() {
+
+  const layout =
+    getHouseLayout(
+      state.house
+    );
+
+
+  let keys;
+
+
+  if (
+    state.house === 1
+  ) {
+
+    keys =
+      state.startChoice === "dela"
+        ? ["yasmine"]
+        : ["davi"];
+
+  }
+
+  else {
+
+    keys =
+      ["davi", "yasmine"];
+
+  }
+
+
+  state.npcs =
+    keys.map(
+      (key, index) => {
+
+        const target =
+          pickRandomTargetInHouse(
+            layout
+          );
+
+
+        return {
+
+          id: key,
+
+          charKey: key,
+
+          room: target.room,
+
+          x: target.x,
+
+          y: target.y,
+
+          dir: "down",
+
+          frame: 0,
+
+          moving: false,
+
+          path: [],
+
+          pathIndex: 0,
+
+          stuckTicks: 0,
+
+          waitUntil:
+            performance.now() +
+            300 +
+            index * 600
+
+        };
+
+      }
+    );
+
+}
+
+
+// =====================================================
+// PASSINHO DE MOVIMENTO (roda a cada NPC_STEP_INTERVAL ms)
+// =====================================================
+
+function npcStep() {
+
+  if (
+    !state.started ||
+    !state.npcs.length
+  ) {
+
+    return;
+
+  }
+
+
+  const layout =
+    getHouseLayout(
+      state.house
+    );
+
+
+  const now =
+    performance.now();
+
+
+  const leader =
+    state.npcs[0];
+
+
+  const follower =
+    state.npcs[1];
+
+
+  state.npcs.forEach(
+    (npc, index) => {
+
+      // =============================================
+      // CASA 2: o segundo personagem não escolhe
+      // destino sozinho — ele só recebe um destino
+      // quando o primeiro (índice 0) escolhe um novo
+      // (ver mais abaixo). Isso faz os dois andarem
+      // juntos, mas sem travar o movimento dele.
+      // =============================================
+
+      const followsLeader =
+        state.house === 2 &&
+        index === 1;
+
+
+      if (
+        !npc.moving
+      ) {
+
+        if (
+          !followsLeader &&
+          now >= npc.waitUntil
+        ) {
+
+          const target =
+            pickRandomTargetInHouse(
+              layout
+            );
+
+
+          npc.path =
+            buildNpcPath(
+              layout,
+              npc.room,
+              target.room,
+              target.x,
+              target.y
+            );
+
+
+          npc.pathIndex =
+            0;
+
+
+          npc.moving =
+            true;
+
+
+          npc.stuckTicks =
+            0;
+
+
+          if (
+            state.house === 2 &&
+            follower
+          ) {
+
+            const followerSpot =
+              pickPointInRoom(
+                layout.rooms[target.room],
+                layout,
+                {
+                  x: target.x,
+                  y: target.y,
+                  dx: 24 + Math.random() * 8,
+                  dy: 14 + Math.random() * 6
+                }
+              );
+
+
+            follower.path =
+              buildNpcPath(
+                layout,
+                follower.room,
+                target.room,
+                followerSpot.x,
+                followerSpot.y
+              );
+
+
+            follower.pathIndex =
+              0;
+
+
+            follower.moving =
+              true;
+
+
+            follower.stuckTicks =
+              0;
+
+          }
+
+        }
+
+
+        renderNpcElement(
+          npc,
+          layout
+        );
+
+
+        return;
+
+      }
+
+
+      // =============================================
+      // ANDANDO — um eixo por vez, em passinhos
+      // =============================================
+
+      const waypoint =
+        npc.path[npc.pathIndex];
+
+
+      if (
+        !waypoint
+      ) {
+
+        npc.moving =
+          false;
+
+
+        npc.frame =
+          0;
+
+
+        npc.waitUntil =
+          now + 1200 + Math.random() * 2200;
+
+
+        renderNpcElement(
+          npc,
+          layout
+        );
+
+
+        return;
+
+      }
+
+
+      const dx =
+        waypoint.x - npc.x;
+
+
+      const dy =
+        waypoint.y - npc.y;
+
+
+      if (
+        Math.abs(dx) <= NPC_STEP_PX &&
+        Math.abs(dy) <= NPC_STEP_PX
+      ) {
+
+        // chegou nesse ponto do caminho
+
+        npc.x =
+          waypoint.x;
+
+
+        npc.y =
+          waypoint.y;
+
+
+        npc.room =
+          waypoint.room;
+
+
+        npc.pathIndex++;
+
+
+        if (
+          npc.pathIndex >= npc.path.length
+        ) {
+
+          npc.moving =
+            false;
+
+
+          npc.frame =
+            0;
+
+
+          npc.waitUntil =
+            now + 1200 + Math.random() * 2200;
+
+        }
+
+
+        renderNpcElement(
+          npc,
+          layout
+        );
+
+
+        return;
+
+      }
+
+
+      let candidateX =
+        npc.x;
+
+
+      let candidateY =
+        npc.y;
+
+
+      let dir =
+        npc.dir;
+
+
+      if (
+        Math.abs(dx) > NPC_STEP_PX
+      ) {
+
+        candidateX =
+          npc.x +
+          Math.sign(dx) * NPC_STEP_PX;
+
+
+        dir =
+          dx > 0
+            ? "right"
+            : "left";
+
+      }
+
+      else if (
+        Math.abs(dy) > NPC_STEP_PX
+      ) {
+
+        candidateY =
+          npc.y +
+          Math.sign(dy) * NPC_STEP_PX;
+
+
+        dir =
+          dy > 0
+            ? "down"
+            : "up";
+
+      }
+
+
+      const obstacles =
+        getFurnitureObstacles(
+          state.house,
+          npc.room,
+          layout
+        );
+
+
+      const otherNpc =
+        state.npcs.find(
+          other =>
+            other !== npc
+        );
+
+
+      if (
+        !npcPositionBlocked(
+          candidateX,
+          candidateY,
+          obstacles,
+          otherNpc
+        )
+      ) {
+
+        npc.x =
+          candidateX;
+
+
+        npc.y =
+          candidateY;
+
+
+        npc.dir =
+          dir;
+
+
+        npc.frame =
+          (npc.frame + 1) %
+          NPC_SHEET_COLS;
+
+
+        npc.stuckTicks =
+          0;
+
+      }
+
+      else {
+
+        npc.stuckTicks =
+          (npc.stuckTicks || 0) + 1;
+
+
+        if (
+          npc.stuckTicks > NPC_STUCK_LIMIT
+        ) {
+
+          // travou (móvel ou o outro personagem no
+          // caminho) — desiste e escolhe outro lugar
+
+          npc.moving =
+            false;
+
+
+          npc.frame =
+            0;
+
+
+          npc.stuckTicks =
+            0;
+
+
+          npc.waitUntil =
+            now + 200 + Math.random() * 400;
+
+        }
+
+      }
+
+
+      renderNpcElement(
+        npc,
+        layout
+      );
+
+    }
+  );
+
+}
+
+
+setInterval(
+  npcStep,
+  NPC_STEP_INTERVAL
+);
+
+
+// =====================================================
+// DESENHAR / ATUALIZAR UM NPC NA TELA
+// =====================================================
+
+function renderNpcElement(npc, layout) {
+
+  const house =
+    document.getElementById(
+      "house"
+    );
+
+
+  if (
+    !house
+  ) {
+
+    return;
+
+  }
+
+
+  let element =
+    document.getElementById(
+      "npc-" + npc.id
+    );
+
+
+  if (
+    !element
+  ) {
+
+    element =
+      document.createElement(
+        "div"
+      );
+
+
+    element.id =
+      "npc-" + npc.id;
+
+
+    element.className =
+      "npc";
+
+
+    const sprite =
+      characterSprites[
+        npc.charKey
+      ];
+
+
+    element.style.backgroundImage =
+      `url(${sprite.src})`;
+
+
+    element.title =
+      sprite.name;
+
+
+    house.appendChild(
+      element
+    );
+
+  }
+
+
+  element.style.left =
+    `${(npc.x / layout.dims.w) * 100}%`;
+
+
+  element.style.top =
+    `${(npc.y / layout.dims.h) * 100}%`;
+
+
+  element.classList.toggle(
+    "npc-idle",
+    !npc.moving
+  );
+
+
+  const row =
+    NPC_DIRECTION_ROW[
+      npc.dir
+    ];
+
+
+  const frame =
+    npc.moving
+      ? npc.frame
+      : 0;
+
+
+  element.style.backgroundPosition =
+    `${-frame * NPC_DISPLAY_W}px ${-row * NPC_DISPLAY_H}px`;
+
+}
+
+
+
+
+// =====================================================
 // PERSONAGENS
 // =====================================================
 
@@ -528,7 +1905,12 @@ function getHouse1Rooms() {
       x: 0,
       y: 50,
       w: 70,
-      h: 50
+      h: 50,
+      entrance: {
+        side: "bottom",
+        from: 20,
+        to: 45
+      }
     }
 
   ];
@@ -646,6 +2028,8 @@ function startGame(choice) {
   state.started =
     true;
 
+  saveGame();
+
 
   const choiceScreen =
     document.getElementById(
@@ -662,6 +2046,9 @@ function startGame(choice) {
     );
 
   }
+
+
+  setupNpcs();
 
 
   render();
@@ -775,6 +2162,189 @@ function updateMoneyDisplay() {
       state.rate;
 
   }
+
+}
+
+
+// =====================================================
+// JANELAS
+// =====================================================
+
+/*
+  Descobre sozinho quais paredes de um cômodo estão
+  na borda externa da casa (ou seja, dá pra ter
+  janela ali) e desenha uma janela centralizada
+  nessa parede. Cômodos do tipo "corridor" não
+  ganham janela, e o lado da porta de entrada
+  também fica sem janela pra não sobrepor.
+*/
+
+function renderRoomWindows(house, room, HOUSE_GRID) {
+
+  if (
+    room.type === "corridor"
+  ) {
+
+    return;
+
+  }
+
+
+  const walls =
+    [];
+
+
+  if (
+    room.x === 0
+  ) {
+
+    walls.push(
+      {
+        side: "left",
+        from: room.y,
+        to: room.y + room.h
+      }
+    );
+
+  }
+
+
+  if (
+    room.x + room.w === HOUSE_GRID
+  ) {
+
+    walls.push(
+      {
+        side: "right",
+        from: room.y,
+        to: room.y + room.h
+      }
+    );
+
+  }
+
+
+  if (
+    room.y === 0
+  ) {
+
+    walls.push(
+      {
+        side: "top",
+        from: room.x,
+        to: room.x + room.w
+      }
+    );
+
+  }
+
+
+  if (
+    room.y + room.h === HOUSE_GRID
+  ) {
+
+    walls.push(
+      {
+        side: "bottom",
+        from: room.x,
+        to: room.x + room.w
+      }
+    );
+
+  }
+
+
+  const minWallLength =
+    HOUSE_GRID * 0.18;
+
+
+  walls.forEach(
+    wall => {
+
+      if (
+        room.entrance &&
+        room.entrance.side ===
+          wall.side
+      ) {
+
+        // já tem porta nessa parede
+
+        return;
+
+      }
+
+
+      const length =
+        wall.to -
+        wall.from;
+
+
+      if (
+        length < minWallLength
+      ) {
+
+        return;
+
+      }
+
+
+      const windowLength =
+        length * 0.4;
+
+
+      const windowFrom =
+        wall.from +
+        (length - windowLength) / 2;
+
+
+      const windowTo =
+        windowFrom +
+        windowLength;
+
+
+      const windowElement =
+        document.createElement(
+          "div"
+        );
+
+
+      windowElement.className =
+        "window-marker window-" +
+        wall.side;
+
+
+      if (
+        wall.side === "top" ||
+        wall.side === "bottom"
+      ) {
+
+        windowElement.style.left =
+          `${(windowFrom / HOUSE_GRID) * 100}%`;
+
+
+        windowElement.style.width =
+          `${(windowTo - windowFrom) / HOUSE_GRID * 100}%`;
+
+      }
+
+      else {
+
+        windowElement.style.top =
+          `${(windowFrom / HOUSE_GRID) * 100}%`;
+
+
+        windowElement.style.height =
+          `${(windowTo - windowFrom) / HOUSE_GRID * 100}%`;
+
+      }
+
+
+      house.appendChild(
+        windowElement
+      );
+
+    }
+  );
 
 }
 
@@ -1049,6 +2619,19 @@ function renderHouse() {
         );
 
       }
+
+
+      // =================================================
+      // JANELAS (automáticas, nas paredes externas)
+      // =================================================
+
+      renderRoomWindows(
+        house,
+        room,
+        state.house === 3
+          ? 30
+          : 100
+      );
 
 
       // =================================================
@@ -1923,12 +3506,75 @@ function renderHouse() {
   );
 
 
+  // =================================================
+  // PORTAS INTERNAS (ligações entre os cômodos, por
+  // onde os personagens passam pra trocar de sala)
+  // =================================================
+
+  const layoutForDoors =
+    getHouseLayout(
+      state.house
+    );
+
+
+  layoutForDoors.connections.forEach(
+    conn => {
+
+      renderInteriorDoor(
+        house,
+        conn,
+        layoutForDoors.HOUSE_GRID
+      );
+
+    }
+  );
+
+
   renderCharactersInHouse(
     house
   );
 
 
   fitHouseToScreen();
+
+}
+
+
+// =====================================================
+// PORTA INTERNA (visual)
+// =====================================================
+
+function renderInteriorDoor(house, conn, HOUSE_GRID) {
+
+  const element =
+    document.createElement(
+      "div"
+    );
+
+
+  element.className =
+    "door-marker door-interior";
+
+
+  element.style.left =
+    `${(conn.x / HOUSE_GRID) * 100}%`;
+
+
+  element.style.top =
+    `${(conn.y / HOUSE_GRID) * 100}%`;
+
+
+  element.style.width =
+    `${(conn.w / HOUSE_GRID) * 100}%`;
+
+
+  element.style.height =
+    `${(conn.h / HOUSE_GRID) * 100}%`;
+
+
+  house.appendChild(
+    element
+  );
 
 }
 
@@ -2103,7 +3749,8 @@ function rotateFurniture(
         maxY
       )
     );
-
+  
+  saveGame();
 
   render();
 
@@ -2118,8 +3765,23 @@ function renderCharactersInHouse(
   house
 ) {
 
+  // Os personagens principais (Davi e Yasmine) agora
+  // andam sozinhos pela casa — ver setupNpcs() e o
+  // loop npcTick(). Aqui só sobra o "selo" com os
+  // filhos já desbloqueados (ainda não tem sprite
+  // andando, então ficam como um emblema fixo).
+
+  const unlockedKids =
+    ["Lucas", "Arthur", "Aurora"].filter(
+      name =>
+        state.characters.includes(
+          name
+        )
+    );
+
+
   if (
-    !state.characters.length
+    !unlockedKids.length
   ) {
 
     return;
@@ -2127,175 +3789,35 @@ function renderCharactersInHouse(
   }
 
 
-  // ===================================================
-  // CASA 1
-  // ===================================================
-
-  if (
-    state.house === 1
-  ) {
-
-    const character =
-      document.createElement(
-        "div"
-      );
-
-
-    character.className =
-      "character";
-
-
-    character.textContent =
-      state.startChoice === "dele"
-        ? "👦"
-        : "👩";
-
-
-    character.style.position =
-      "absolute";
-
-
-    character.style.left =
-      "46%";
-
-
-    character.style.top =
-      "35%";
-
-
-    character.title =
-      state.startChoice === "dele"
-        ? "Ele"
-        : "Ela";
-
-
-    house.appendChild(
-      character
+  const badge =
+    document.createElement(
+      "div"
     );
 
-  }
+
+  badge.className =
+    "family-badge";
 
 
-  // ===================================================
-  // CASA 2
-  // ===================================================
-
-  if (
-    state.house === 2
-  ) {
-
-    const couple =
-      document.createElement(
-        "div"
-      );
+  const kidIcons = {
+    Lucas: "👦",
+    Arthur: "👦",
+    Aurora: "👶"
+  };
 
 
-    couple.className =
-      "character-couple";
-
-
-    couple.innerHTML =
-      "👦 ❤️ 👩";
-
-
-    couple.style.position =
-      "absolute";
-
-
-    couple.style.left =
-      "38%";
-
-
-    couple.style.top =
-      "42%";
-
-
-    house.appendChild(
-      couple
-    );
-
-  }
-
-
-  // ===================================================
-  // CASA 3
-  // ===================================================
-
-  if (
-    state.house === 3
-  ) {
-
-    const family =
-      document.createElement(
-        "div"
-      );
-
-
-    family.className =
-      "character-family";
-
-
-    let content =
-      "👦 👩";
-
-
-    if (
-      state.characters.includes(
-        "Lucas"
+  badge.innerHTML =
+    unlockedKids
+      .map(
+        name =>
+          kidIcons[name]
       )
-    ) {
-
-      content +=
-        " 👦";
-
-    }
+      .join(" ");
 
 
-    if (
-      state.characters.includes(
-        "Arthur"
-      )
-    ) {
-
-      content +=
-        " 👦";
-
-    }
-
-
-    if (
-      state.characters.includes(
-        "Aurora"
-      )
-    ) {
-
-      content +=
-        " 👶";
-
-    }
-
-
-    family.innerHTML =
-      content;
-
-
-    family.style.position =
-      "absolute";
-
-
-    family.style.left =
-      "30%";
-
-
-    family.style.top =
-      "35%";
-
-
-    house.appendChild(
-      family
-    );
-
-  }
+  house.appendChild(
+    badge
+  );
 
 }
 
@@ -2920,6 +4442,8 @@ function buyFurniture(
   state.rate +=
     item.rate;
 
+  saveGame();
+
 
   // ===================================================
   // ATUALIZAR
@@ -3097,6 +4621,7 @@ function unlockCharacter(
     person.name
   );
 
+  saveGame();
 
   render();
 
@@ -3223,6 +4748,7 @@ function nextHouse() {
 
   state.house++;
 
+  saveGame();
 
   if (
     state.house === 2
@@ -3256,6 +4782,9 @@ function nextHouse() {
     );
 
   }
+
+
+  setupNpcs();
 
 
   render();
@@ -3678,4 +5207,97 @@ if (
 // INICIALIZAÇÃO
 // =====================================================
 
-render();
+if (hasSave()) {
+
+  loadGame();
+
+  render();
+
+}
+else {
+
+  render();
+
+}
+
+// =====================================================
+// BOTÃO — CONTINUAR JOGO
+// =====================================================
+
+const continueGame =
+  document.getElementById(
+    "continueGame"
+  );
+
+
+if (continueGame) {
+
+  continueGame.onclick =
+    () => {
+
+      if (!loadGame()) {
+
+        showMessage(
+          "Nenhum jogo salvo."
+        );
+
+        return;
+
+      }
+
+
+      const choiceScreen =
+        document.getElementById(
+          "choiceScreen"
+        );
+
+
+      if (choiceScreen) {
+
+        choiceScreen.classList.add(
+          "hidden"
+        );
+
+      }
+
+
+      render();
+
+    };
+
+}
+
+
+// =====================================================
+// BOTÃO — NOVO JOGO
+// =====================================================
+
+const newGameButton =
+  document.getElementById(
+    "newGame"
+  );
+
+
+if (newGameButton) {
+
+  newGameButton.onclick =
+    () => {
+
+      const confirmed =
+        confirm(
+          "Começar um novo jogo? Todo o progresso atual será apagado."
+        );
+
+
+      if (!confirmed) {
+
+        return;
+
+      }
+
+
+      newGame();
+
+    };
+
+}
